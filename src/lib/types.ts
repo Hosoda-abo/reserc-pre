@@ -14,13 +14,27 @@ export type ChatHistory = {
   parts: HistoryPart[]
 }
 
-export type Phase = 0 | 1 | 2 | 3 | 4 | 5
+export type Phase = "idle" | "input" | "output" | "steps" | "pseudocode" | "complete"
+
+export type PhaseComplete = false | "input" | "output" | "step" | "pseudocode" | "complete"
+
+export type ConfirmedContent = {
+  input: string | null
+  output: string | null
+  steps: string[]
+  pseudocode: string | null
+}
 
 export type ChatRequest = {
   message: string
   history: ChatHistory[]
+  phase: Exclude<Phase, "idle">
+  problem: string
+  confirmed: Omit<ConfirmedContent, "pseudocode">
 }
 
 export type ChatResponse = {
-  reply: string
+  message: string
+  phaseComplete: PhaseComplete
+  confirmedContent: string | null
 }
