@@ -20,3 +20,12 @@ npm-debug.log*
 # エディタ
 .vscode/
 .idea/
+
+# TypeScript ビルドキャッシュ
+tsconfig.tsbuildinfo
+
+# テスト結果
+test-results/
+
+# Claude Code 設定
+.claude/
