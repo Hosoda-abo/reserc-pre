@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import ChatWindow from "@/components/ChatWindow"
 import InputForm from "@/components/InputForm"
 import PseudocodeEditor from "@/components/PseudocodeEditor"
@@ -21,6 +21,12 @@ export default function Home() {
     steps: [],
     pseudocode: null,
   })
+  // 現フェーズで学習者が送信した回数。フェーズが変わるたびリセットされ、1回以上で「次へ進む」が有効化
+  const [userTurnsInCurrentPhase, setUserTurnsInCurrentPhase] = useState(0)
+
+  useEffect(() => {
+    setUserTurnsInCurrentPhase(0)
+  }, [phase])
 
   const handleStart = () => {
     if (!problemText.trim()) return
@@ -35,7 +41,6 @@ export default function Home() {
   }
 
   // ユーザーが「次へ進む」を押せるのは、現フェーズで少なくとも1回自分の意見を送った後
-  const userTurnsInCurrentPhase = messages.filter(m => m.role === "user").length
   const canAdvance = userTurnsInCurrentPhase > 0
 
   const handleSend = async (text: string, forceComplete: boolean = false) => {
@@ -45,6 +50,10 @@ export default function Home() {
     const newMessages = [...messages, userMessage]
     setMessages(newMessages)
     setIsLoading(true)
+    // 強制確定ボタン経由は学習者の回答とみなさない
+    if (!forceComplete) {
+      setUserTurnsInCurrentPhase(prev => prev + 1)
+    }
 
     const newHistory: ChatHistory[] = [
       ...history,
