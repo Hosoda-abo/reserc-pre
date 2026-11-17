@@ -16,9 +16,9 @@ function extractJSON(text: string): Record<string, unknown> | null {
 
 export async function POST(request: Request) {
   try {
-    const { message, history, phase, problem, confirmed }: ChatRequest = await request.json()
+    const { message, history, phase, problem, confirmed, forceComplete }: ChatRequest = await request.json()
 
-    const systemPrompt = buildSystemPrompt(phase, problem, confirmed)
+    const systemPrompt = buildSystemPrompt(phase, problem, confirmed, forceComplete ?? false)
 
     // Gemini形式のhistory（role: "model" | "user", parts: [{text}]）をOpenAI形式に変換
     const historyMessages: ChatCompletionMessageParam[] = history.map((h) => ({

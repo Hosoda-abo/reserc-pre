@@ -31,6 +31,8 @@ export type ChatRequest = {
   phase: Exclude<Phase, "idle">
   problem: string
   confirmed: Omit<ConfirmedContent, "pseudocode">
+  // 学習者が「この内容で確定」ボタンを押したとき true。AIに即座に要約＋フェーズ進行を強制する
+  forceComplete?: boolean
 }
 
 export type ChatResponse = {
