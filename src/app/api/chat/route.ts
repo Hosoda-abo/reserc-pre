@@ -54,10 +54,13 @@ export async function POST(request: Request) {
         : false
 
     const confirmedContent = typeof parsed.confirmedContent === "string" ? parsed.confirmedContent : null
+    let aiMessage = typeof parsed.message === "string" ? parsed.message : rawText
 
     // gpt-4o-miniは confirmedContent を埋めつつ phaseComplete を忘れる矛盾応答を返すことがある
-    // confirmedContent が入っている＝AIは確定判定したと見なし、現フェーズに対応する完了値へフォールバックする
-    if (phaseComplete === false && confirmedContent !== null) {
+    // ただしAIが単にパラフレーズしただけで確定判定していない可能性もあるため、
+    // messageに確定表現が含まれる場合のみフェーズを進める保守的な補正にする
+    const messageSignalsConfirm = /確定しました|確定です|十分です|OK です|次に進み|次へ進み/.test(aiMessage)
+    if (phaseComplete === false && confirmedContent !== null && messageSignalsConfirm) {
       const phaseToComplete: Record<typeof phase, PhaseComplete> = {
         input: "input",
         output: "output",
@@ -66,11 +69,32 @@ export async function POST(request: Request) {
         complete: "complete",
       }
       phaseComplete = phaseToComplete[phase]
-      console.warn(`[phaseComplete推論] AIが confirmedContent を埋めたが phaseComplete=false。${phase} → ${phaseComplete} に補正`)
+      console.warn(`[phaseComplete推論] AIが確定表現を使ったが phaseComplete=false。${phase} → ${phaseComplete} に補正`)
+    } else if (phaseComplete === false && confirmedContent !== null) {
+      console.warn(`[phaseComplete推論スキップ] confirmedContent有だが確定表現なし。パラフレーズの可能性ありフェーズ据え置き`)
+    }
+
+    // フェーズ確定時、AIのメッセージに次フェーズへの問いが含まれていなければサーバー側で付与する
+    // （LLMは時々この指示を無視するため、ここで確実に補完する）
+    const nextPhasePrompts: Partial<Record<Exclude<PhaseComplete, false>, { pattern: RegExp; question: string }>> = {
+      input: {
+        pattern: /出力/,
+        question: "続いて、このプログラムが返す『出力』は何ですか？",
+      },
+      output: {
+        pattern: /手順|ステップ/,
+        question: "続いて、入力から出力を得るための最初の処理手順を教えてください。",
+      },
+    }
+    if (phaseComplete !== false) {
+      const next = nextPhasePrompts[phaseComplete]
+      if (next && !next.pattern.test(aiMessage)) {
+        aiMessage = aiMessage.trim() + "\n\n" + next.question
+      }
     }
 
     return Response.json({
-      message: typeof parsed.message === "string" ? parsed.message : rawText,
+      message: aiMessage,
       phaseComplete,
       confirmedContent,
     } satisfies ChatResponse)
