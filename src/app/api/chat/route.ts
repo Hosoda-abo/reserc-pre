@@ -5,6 +5,9 @@ import { buildSystemPrompt } from "@/lib/prompt"
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
+// gpt-6世代の最廉価モデル。新世代ベース性能＋低コスト。順守率が不十分なら gpt-5-mini へ切り替え
+const MODEL = "gpt-6-luna"
+
 function extractJSON(text: string): Record<string, unknown> | null {
   try { return JSON.parse(text) } catch {}
   const blockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -27,7 +30,7 @@ export async function POST(request: Request) {
     }))
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         ...historyMessages,
