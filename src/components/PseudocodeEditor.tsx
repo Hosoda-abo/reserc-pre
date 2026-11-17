@@ -9,10 +9,11 @@ const PADDING_V = 12
 
 type PseudocodeEditorProps = {
   onSubmit: (text: string) => void
+  onAdvance: (text: string) => void
   disabled: boolean
 }
 
-export default function PseudocodeEditor({ onSubmit, disabled }: PseudocodeEditorProps) {
+export default function PseudocodeEditor({ onSubmit, onAdvance, disabled }: PseudocodeEditorProps) {
   const [code, setCode] = useState("")
   const lineNumbersRef = useRef<HTMLDivElement>(null)
   const editorWrapperRef = useRef<HTMLDivElement>(null)
@@ -35,6 +36,11 @@ export default function PseudocodeEditor({ onSubmit, disabled }: PseudocodeEdito
   const handleSubmit = () => {
     if (!code.trim() || disabled) return
     onSubmit(code.trim())
+  }
+
+  const handleAdvance = () => {
+    if (!code.trim() || disabled) return
+    onAdvance(code.trim())
   }
 
   return (
@@ -94,7 +100,15 @@ export default function PseudocodeEditor({ onSubmit, disabled }: PseudocodeEdito
         </div>
       </div>
 
-      <div className="flex justify-end mt-2">
+      <div className="flex justify-end gap-2 mt-2">
+        <button
+          onClick={handleAdvance}
+          disabled={disabled || !code.trim()}
+          title="この疑似コードで確定し、次のフェーズに進みます"
+          className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          この内容で確定する
+        </button>
         <button
           onClick={handleSubmit}
           disabled={disabled || !code.trim()}

@@ -29,7 +29,16 @@ export default function Home() {
     setHistory([{ role: "model", parts: [{ text: PHASE_1_PROMPT }] }])
   }
 
-  const handleSend = async (text: string) => {
+  // 「次へ進む」ボタンから呼ばれる。これまでの対話を確定して次フェーズへ進めるようAIに指示する
+  const handleAdvance = (userText?: string) => {
+    handleSend(userText ?? "これまでの内容で確定したいので次に進めてください", true)
+  }
+
+  // ユーザーが「次へ進む」を押せるのは、現フェーズで少なくとも1回自分の意見を送った後
+  const userTurnsInCurrentPhase = messages.filter(m => m.role === "user").length
+  const canAdvance = userTurnsInCurrentPhase > 0
+
+  const handleSend = async (text: string, forceComplete: boolean = false) => {
     if (phase === "idle") return
 
     const userMessage: Message = { role: "user", content: text }
@@ -56,6 +65,7 @@ export default function Home() {
             output: confirmed.output,
             steps: confirmed.steps,
           },
+          forceComplete,
         }),
       })
 
@@ -163,10 +173,19 @@ export default function Home() {
         <div className="flex flex-col flex-1 overflow-hidden border-r">
           <ChatWindow messages={messages} />
           {phase !== "idle" && phase !== "pseudocode" && phase !== "complete" && (
-            <InputForm onSend={handleSend} disabled={isLoading} />
+            <InputForm
+              onSend={handleSend}
+              onAdvance={() => handleAdvance()}
+              canAdvance={canAdvance}
+              disabled={isLoading}
+            />
           )}
           {phase === "pseudocode" && (
-            <PseudocodeEditor onSubmit={handleSend} disabled={isLoading} />
+            <PseudocodeEditor
+              onSubmit={handleSend}
+              onAdvance={(code) => handleAdvance(code)}
+              disabled={isLoading}
+            />
           )}
         </div>
 
