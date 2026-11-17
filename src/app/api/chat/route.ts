@@ -48,15 +48,31 @@ export async function POST(request: Request) {
     }
 
     const VALID_PHASE_COMPLETE = new Set(["input", "output", "step", "pseudocode", "complete"])
-    const phaseComplete: PhaseComplete =
+    let phaseComplete: PhaseComplete =
       parsed.phaseComplete && VALID_PHASE_COMPLETE.has(String(parsed.phaseComplete))
         ? (parsed.phaseComplete as PhaseComplete)
         : false
 
+    const confirmedContent = typeof parsed.confirmedContent === "string" ? parsed.confirmedContent : null
+
+    // gpt-4o-miniは confirmedContent を埋めつつ phaseComplete を忘れる矛盾応答を返すことがある
+    // confirmedContent が入っている＝AIは確定判定したと見なし、現フェーズに対応する完了値へフォールバックする
+    if (phaseComplete === false && confirmedContent !== null) {
+      const phaseToComplete: Record<typeof phase, PhaseComplete> = {
+        input: "input",
+        output: "output",
+        steps: "step",
+        pseudocode: "pseudocode",
+        complete: "complete",
+      }
+      phaseComplete = phaseToComplete[phase]
+      console.warn(`[phaseComplete推論] AIが confirmedContent を埋めたが phaseComplete=false。${phase} → ${phaseComplete} に補正`)
+    }
+
     return Response.json({
       message: typeof parsed.message === "string" ? parsed.message : rawText,
       phaseComplete,
-      confirmedContent: typeof parsed.confirmedContent === "string" ? parsed.confirmedContent : null,
+      confirmedContent,
     } satisfies ChatResponse)
   } catch (err) {
     console.error("OpenAI APIエラー:", err)
