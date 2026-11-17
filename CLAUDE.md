@@ -19,7 +19,7 @@
  ## 技術スタック
  
   - **フレームワーク**: Next.js (App Router) + TypeScript
-  - **API**: Google Gemini API (`@google/generative-ai`)
+  - **API**: OpenAI API (`openai`)
   - **スタイリング**: Tailwind CSS
   - **状態管理**: React useState（セッション内のみ、永続化なし）
   - **DB**: なし（プロトタイプのためローカル動作のみ）
@@ -41,7 +41,7 @@
 
   ## 環境変数
 
-  GEMINI_API_KEY=your_api_key_here`.env.local`に記載し、Gitにはコミットしない。
+  OPENAI_API_KEY=your_api_key_here`.env.local`に記載し、Gitにはコミットしない。
 
   ## コーディング規約
 
@@ -82,3 +82,13 @@
 
   - API通信のエラーは必ずcatchしユーザーに通知する
   - console.errorはデバッグ用途のみ
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

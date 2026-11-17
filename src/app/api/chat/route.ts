@@ -1,8 +1,9 @@
-import { GoogleGenAI } from "@google/genai"
+import OpenAI from "openai"
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions"
 import type { ChatRequest, ChatResponse, PhaseComplete } from "@/lib/types"
 import { buildSystemPrompt } from "@/lib/prompt"
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
 function extractJSON(text: string): Record<string, unknown> | null {
   try { return JSON.parse(text) } catch {}
@@ -19,19 +20,23 @@ export async function POST(request: Request) {
 
     const systemPrompt = buildSystemPrompt(phase, problem, confirmed)
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: [
-        ...history,
-        { role: "user", parts: [{ text: message }] },
+    // Gemini形式のhistory（role: "model" | "user", parts: [{text}]）をOpenAI形式に変換
+    const historyMessages: ChatCompletionMessageParam[] = history.map((h) => ({
+      role: h.role === "model" ? "assistant" : "user",
+      content: h.parts.map((p) => p.text).join(""),
+    }))
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...historyMessages,
+        { role: "user", content: message },
       ],
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: "application/json",
-      },
+      response_format: { type: "json_object" },
     })
 
-    const rawText = response.text ?? ""
+    const rawText = completion.choices[0]?.message?.content ?? ""
     const parsed = extractJSON(rawText)
 
     if (!parsed) {
@@ -54,7 +59,7 @@ export async function POST(request: Request) {
       confirmedContent: typeof parsed.confirmedContent === "string" ? parsed.confirmedContent : null,
     } satisfies ChatResponse)
   } catch (err) {
-    console.error("Gemini APIエラー:", err)
+    console.error("OpenAI APIエラー:", err)
     return Response.json({ error: String(err) }, { status: 500 })
   }
 }
