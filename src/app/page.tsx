@@ -10,6 +10,8 @@ import { PHASE_1_PROMPT } from "@/lib/prompt"
 import type { Message, ChatHistory, ChatResponse, Phase, ConfirmedContent } from "@/lib/types"
 
 export default function Home() {
+  const [learnerId, setLearnerId] = useState("")
+  const [sessionId, setSessionId] = useState("")
   const [problemText, setProblemText] = useState("")
   const [messages, setMessages] = useState<Message[]>([])
   const [history, setHistory] = useState<ChatHistory[]>([])
@@ -29,10 +31,25 @@ export default function Home() {
   }, [phase])
 
   const handleStart = () => {
-    if (!problemText.trim()) return
+    if (!problemText.trim() || !learnerId.trim()) return
+    const newSessionId = crypto.randomUUID()
+    setSessionId(newSessionId)
     setPhase("input")
     setMessages([{ role: "model", content: PHASE_1_PROMPT }])
     setHistory([{ role: "model", parts: [{ text: PHASE_1_PROMPT }] }])
+
+    // セッション開始ログを送信（失敗してもUIには影響させない）
+    fetch("/api/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        timestamp: new Date().toISOString(),
+        sessionId: newSessionId,
+        learnerId: learnerId.trim(),
+        event: "session_start",
+        problem: problemText,
+      }),
+    }).catch((err) => console.error("session_startログ送信失敗:", err))
   }
 
   // 「次へ進む」ボタンから呼ばれる。これまでの対話を確定して次フェーズへ進めるようAIに指示する
@@ -75,6 +92,8 @@ export default function Home() {
             steps: confirmed.steps,
           },
           forceComplete,
+          learnerId: learnerId.trim(),
+          sessionId,
         }),
       })
 
@@ -145,9 +164,22 @@ export default function Home() {
         </h1>
       </div>
 
-      {/* 問題文入力エリア */}
+      {/* 問題文・学習者ID入力エリア */}
       <div className="px-4 py-3 border-b bg-gray-50">
         <div className="flex gap-2 items-start">
+          <div className="w-40">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              学習者ID
+            </label>
+            <input
+              type="text"
+              value={learnerId}
+              onChange={(e) => setLearnerId(e.target.value)}
+              disabled={phase !== "idle"}
+              placeholder="例: student01"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100 disabled:text-gray-600"
+            />
+          </div>
           <div className="flex-1">
             <label className="block text-xs font-medium text-gray-500 mb-1">
               問題文
@@ -164,7 +196,7 @@ export default function Home() {
           {phase === "idle" && (
             <button
               onClick={handleStart}
-              disabled={!problemText.trim()}
+              disabled={!problemText.trim() || !learnerId.trim()}
               className="mt-5 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
             >
               開始

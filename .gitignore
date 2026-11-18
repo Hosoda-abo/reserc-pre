@@ -13,6 +13,7 @@ out/
 # ログ
 *.log
 npm-debug.log*
+logs/
 
 # OS
 .DS_Store

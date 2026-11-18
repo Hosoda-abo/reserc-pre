@@ -2,6 +2,7 @@ import OpenAI from "openai"
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions"
 import type { ChatRequest, ChatResponse, PhaseComplete } from "@/lib/types"
 import { buildSystemPrompt } from "@/lib/prompt"
+import { appendLog } from "@/lib/logger"
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
@@ -19,9 +20,20 @@ function extractJSON(text: string): Record<string, unknown> | null {
 
 export async function POST(request: Request) {
   try {
-    const { message, history, phase, problem, confirmed, forceComplete }: ChatRequest = await request.json()
+    const { message, history, phase, problem, confirmed, forceComplete, learnerId, sessionId }: ChatRequest = await request.json()
 
     const systemPrompt = buildSystemPrompt(phase, problem, confirmed, forceComplete ?? false)
+
+    // 学習者の発話を研究ログに記録
+    await appendLog({
+      timestamp: new Date().toISOString(),
+      sessionId,
+      learnerId,
+      event: "user_message",
+      phase,
+      content: message,
+      forceComplete: forceComplete ?? false,
+    })
 
     // Gemini形式のhistory（role: "model" | "user", parts: [{text}]）をOpenAI形式に変換
     const historyMessages: ChatCompletionMessageParam[] = history.map((h) => ({
@@ -43,8 +55,19 @@ export async function POST(request: Request) {
     const parsed = extractJSON(rawText)
 
     if (!parsed) {
+      const fallbackMessage = rawText || "応答を取得できませんでした。"
+      await appendLog({
+        timestamp: new Date().toISOString(),
+        sessionId,
+        learnerId,
+        event: "assistant_message",
+        phase,
+        content: fallbackMessage,
+        phaseComplete: false,
+        confirmedContent: null,
+      })
       return Response.json({
-        message: rawText || "応答を取得できませんでした。",
+        message: fallbackMessage,
         phaseComplete: false,
         confirmedContent: null,
       } satisfies ChatResponse)
@@ -95,6 +118,18 @@ export async function POST(request: Request) {
         aiMessage = aiMessage.trim() + "\n\n" + next.question
       }
     }
+
+    // AI応答を研究ログに記録
+    await appendLog({
+      timestamp: new Date().toISOString(),
+      sessionId,
+      learnerId,
+      event: "assistant_message",
+      phase,
+      content: aiMessage,
+      phaseComplete,
+      confirmedContent,
+    })
 
     return Response.json({
       message: aiMessage,

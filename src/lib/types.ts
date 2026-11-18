@@ -33,6 +33,9 @@ export type ChatRequest = {
   confirmed: Omit<ConfirmedContent, "pseudocode">
   // 学習者が「この内容で確定」ボタンを押したとき true。AIに即座に要約＋フェーズ進行を強制する
   forceComplete?: boolean
+  // 研究ログ用の識別子
+  learnerId: string
+  sessionId: string
 }
 
 export type ChatResponse = {
@@ -40,3 +43,32 @@ export type ChatResponse = {
   phaseComplete: PhaseComplete
   confirmedContent: string | null
 }
+
+// 研究ログ用イベント型
+type LogEventBase = {
+  timestamp: string
+  sessionId: string
+  learnerId: string
+}
+
+export type SessionStartEvent = LogEventBase & {
+  event: "session_start"
+  problem: string
+}
+
+export type UserMessageEvent = LogEventBase & {
+  event: "user_message"
+  phase: Exclude<Phase, "idle">
+  content: string
+  forceComplete: boolean
+}
+
+export type AssistantMessageEvent = LogEventBase & {
+  event: "assistant_message"
+  phase: Exclude<Phase, "idle">
+  content: string
+  phaseComplete: PhaseComplete
+  confirmedContent: string | null
+}
+
+export type LogEvent = SessionStartEvent | UserMessageEvent | AssistantMessageEvent
