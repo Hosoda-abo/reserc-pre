@@ -1,13 +1,10 @@
 import OpenAI from "openai"
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions"
 import type { ChatRequest, ChatResponse, PhaseComplete } from "@/lib/types"
-import { buildSystemPrompt } from "@/lib/prompt"
+import { buildSystemPrompt, selectModel } from "@/lib/prompt"
 import { appendLog } from "@/lib/logger"
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
-
-// gpt-6世代の最廉価モデル。新世代ベース性能＋低コスト。順守率が不十分なら gpt-5-mini へ切り替え
-const MODEL = "gpt-6-luna"
 
 function extractJSON(text: string): Record<string, unknown> | null {
   try { return JSON.parse(text) } catch {}
@@ -18,11 +15,38 @@ function extractJSON(text: string): Record<string, unknown> | null {
   return null
 }
 
+// 2つの日本語文の類似度を文字bigramベースで求める。
+// Jaccard係数（言い換え検出）と Overlap係数（短い方が長い方に含まれる関係＝
+// 既存ステップが細かく分解されて再掲されるケース）の最大値を返す。
+function stepSimilarity(a: string, b: string): number {
+  const na = a.replace(/\s/g, "")
+  const nb = b.replace(/\s/g, "")
+  if (na === nb) return 1
+  if (na.length < 2 || nb.length < 2) return na === nb ? 1 : 0
+  const bigrams = (s: string): Set<string> => {
+    const set = new Set<string>()
+    for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2))
+    return set
+  }
+  const ba = bigrams(na)
+  const bb = bigrams(nb)
+  let intersect = 0
+  for (const g of ba) if (bb.has(g)) intersect++
+  const unionSize = ba.size + bb.size - intersect
+  const jaccard = unionSize === 0 ? 0 : intersect / unionSize
+  const minSize = Math.min(ba.size, bb.size)
+  const overlap = minSize === 0 ? 0 : intersect / minSize
+  return Math.max(jaccard, overlap)
+}
+
+const STEP_DUPLICATE_THRESHOLD = 0.7
+
 export async function POST(request: Request) {
   try {
     const { message, history, phase, problem, confirmed, forceComplete, learnerId, sessionId }: ChatRequest = await request.json()
 
     const systemPrompt = buildSystemPrompt(phase, problem, confirmed, forceComplete ?? false)
+    const model = selectModel(phase)
 
     // 学習者の発話を研究ログに記録
     await appendLog({
@@ -42,7 +66,7 @@ export async function POST(request: Request) {
     }))
 
     const completion = await openai.chat.completions.create({
-      model: MODEL,
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         ...historyMessages,
@@ -80,6 +104,29 @@ export async function POST(request: Request) {
         : false
 
     const confirmedContent = typeof parsed.confirmedContent === "string" ? parsed.confirmedContent : null
+    // 処理手順→疑似コード遷移時、直近のターンで追加された未確定ステップ群
+    // AIが確定済みステップを言い換えて再送する場合に備え、類似度で重複を除外する
+    const rawConfirmedSteps = Array.isArray(parsed.confirmedSteps)
+      ? parsed.confirmedSteps.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+      : undefined
+    const confirmedSteps = rawConfirmedSteps
+      ? rawConfirmedSteps.reduce<string[]>((acc, step) => {
+          // 既に確定済みのステップとの重複を除外
+          if (confirmed.steps.some(existing =>
+            stepSimilarity(step, existing) >= STEP_DUPLICATE_THRESHOLD
+          )) return acc
+          // 本ターン内で既に採用した新規ステップとの重複も除外
+          if (acc.some(adopted =>
+            stepSimilarity(step, adopted) >= STEP_DUPLICATE_THRESHOLD
+          )) return acc
+          acc.push(step)
+          return acc
+        }, [])
+      : undefined
+    if (rawConfirmedSteps && confirmedSteps && rawConfirmedSteps.length !== confirmedSteps.length) {
+      const dropped = rawConfirmedSteps.length - confirmedSteps.length
+      console.warn(`[confirmedSteps重複除外] ${dropped}件のステップを既存と類似のため除外`)
+    }
     let aiMessage = typeof parsed.message === "string" ? parsed.message : rawText
 
     // gpt-4o-miniは confirmedContent を埋めつつ phaseComplete を忘れる矛盾応答を返すことがある
@@ -129,12 +176,14 @@ export async function POST(request: Request) {
       content: aiMessage,
       phaseComplete,
       confirmedContent,
+      confirmedSteps,
     })
 
     return Response.json({
       message: aiMessage,
       phaseComplete,
       confirmedContent,
+      confirmedSteps,
     } satisfies ChatResponse)
   } catch (err) {
     console.error("OpenAI APIエラー:", err)

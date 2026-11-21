@@ -42,6 +42,10 @@ export type ChatResponse = {
   message: string
   phaseComplete: PhaseComplete
   confirmedContent: string | null
+  // 処理手順フェーズから疑似コードへ遷移するとき、直前のメッセージで学習者が
+  // 追加したがまだ確定していないステップ群をまとめて保存するための配列。
+  // 他のフェーズ遷移では使用しない。
+  confirmedSteps?: string[]
 }
 
 // 研究ログ用イベント型
@@ -69,6 +73,7 @@ export type AssistantMessageEvent = LogEventBase & {
   content: string
   phaseComplete: PhaseComplete
   confirmedContent: string | null
+  confirmedSteps?: string[]
 }
 
 export type LogEvent = SessionStartEvent | UserMessageEvent | AssistantMessageEvent

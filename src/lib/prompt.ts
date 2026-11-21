@@ -1,147 +1,53 @@
 import type { ConfirmedContent, Phase } from "./types"
+import { buildBasePrompt } from "./prompts/base"
+import { inputPhasePrompt } from "./prompts/input"
+import { outputPhasePrompt } from "./prompts/output"
+import { stepsPhasePrompt } from "./prompts/steps"
+import { pseudocodePhasePrompt } from "./prompts/pseudocode"
+import { completePhasePrompt } from "./prompts/complete"
+import { FORCE_COMPLETE_OVERRIDE } from "./prompts/override"
 
 // フェーズ1開始時の固定メッセージ（APIコール不要）
 export const PHASE_1_PROMPT = `それでは始めましょう。まず最初に、一点だけ教えてください。
 
 この問題への「入力」は何ですか？プログラムが受け取るデータを、自分の言葉で日本語で説明してください。コードは書かなくて構いません。`
 
+type PhasePromptFn = (confirmed: Omit<ConfirmedContent, "pseudocode">) => string
+
+const phasePromptMap: Record<Exclude<Phase, "idle">, PhasePromptFn> = {
+  input: inputPhasePrompt,
+  output: outputPhasePrompt,
+  steps: stepsPhasePrompt,
+  pseudocode: pseudocodePhasePrompt,
+  complete: completePhasePrompt,
+}
+
+// フェーズごとに使用するモデル
+// 入力・出力・完了: 新世代ベース性能とトーンの自然さが欲しいフェーズ
+// 処理手順・疑似コード: 指示遵守が特に重要なフェーズ
+const PHASE_MODEL_MAP: Record<Exclude<Phase, "idle">, string> = {
+  input: "gpt-6-luna",
+  output: "gpt-6-luna",
+  steps: "gpt-5.4-mini",
+  pseudocode: "gpt-5.4-mini",
+  complete: "gpt-6-luna",
+}
+
 // フェーズごとのシステムプロンプトを生成
+// base（共通） + phase固有 + forceCompleteオーバーライド（該当時）
 export function buildSystemPrompt(
   phase: Exclude<Phase, "idle">,
   problem: string,
   confirmed: Omit<ConfirmedContent, "pseudocode">,
   forceComplete: boolean = false
 ): string {
-  const confirmedSummary = [
-    `入力: ${confirmed.input ?? "未確定"}`,
-    `出力: ${confirmed.output ?? "未確定"}`,
-    confirmed.steps.length > 0
-      ? `処理手順:\n${confirmed.steps.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}`
-      : `処理手順: 未確定`,
-  ].join("\n")
-
-  const baseRules = `あなたはプログラミング学習支援AIです。
-
-【絶対に守るルール】
-1. コードを絶対に生成・提示しない
-2. 答えを直接教えない
-3. 質問は必ず一問ずつ行う（学習者が回答するまで次に移らない）
-4. 問い返しは一度に1〜2個以内
-5. 学習者が「わからない」と言ったら誘導質問を1個だけ返す
-6. 処理手順を問うときは特定の解法に誘導しない
-7. 学習者のアプローチが論理的に成立するかどうかを基準にフィードバックする
-8. 疑似コードフェーズでも正しい疑似コードを提示しない。不足箇所を一問ずつ問い返す
-
-【問題文】
-${problem}
-
-【これまでに確定した内容】
-${confirmedSummary}
-
-【応答形式（必須）】
-必ず以下のJSON形式のみで応答してください。マークダウンのコードブロックは不要です。
-{
-  "message": "学習者に表示するメッセージ（自然な日本語）",
-  "phaseComplete": false,
-  "confirmedContent": null
+  const base = buildBasePrompt(problem, confirmed)
+  const phasePart = phasePromptMap[phase](confirmed)
+  const override = forceComplete ? `\n\n${FORCE_COMPLETE_OVERRIDE}` : ""
+  return `${base}\n\n${phasePart}${override}`
 }
-phaseComplete と confirmedContent の値は以下のフェーズ指示に従って設定してください。`
 
-  const phaseInstructions: Record<Exclude<Phase, "idle">, string> = {
-    input: `【フェーズ: 入力確認】
-学習者の回答をもとに「入力」を確認してください。
-
-【十分と判定する基準（以下のいずれかを満たしたら必ず phaseComplete を進める）】
-- データの種類（整数／文字列／配列／辞書 等）が明示されている
-- または学習者が具体例を1つ以上示している
-- または学習者の説明で「プログラムが何を受け取るか」が一意に読み取れる
-
-判定が十分なら:
-  → "phaseComplete": "input"
-  → "confirmedContent": "確定した入力内容（簡潔に整理した文）"
-  → message には以下の2つを含める:
-    (1) 「入力が確定した」旨の一言
-    (2) 続けて「では次に、このプログラムが返す『出力』は何ですか？」という出力フェーズへの問い
-
-不十分な場合のみ:
-  → "phaseComplete": false
-  → "confirmedContent": null
-  → 問い返しは最大2往復まで。2往復目でも不明瞭なら、学習者の表現を尊重してそのまま確定する`,
-
-    output: `【フェーズ: 出力確認】
-学習者の回答をもとに「出力」を確認してください。
-（入力「${confirmed.input}」は既に確定済みなので、再要約は不要です）
-
-【十分と判定する基準（以下のいずれかを満たしたら必ず phaseComplete を進める）】
-- 出力のデータ種類または形式が明示されている
-- または学習者が具体例を1つ以上示している
-- または学習者の説明で「プログラムが何を返すか」が一意に読み取れる
-
-判定が十分なら:
-  → "phaseComplete": "output"
-  → "confirmedContent": "確定した出力内容（簡潔に整理した文）"
-  → message には以下の2つを含める:
-    (1) 「出力が確定した」旨の一言
-    (2) 続けて「では、入力から出力を得るためにどのような手順で処理しますか？まず最初のステップを教えてください」という処理手順フェーズへの問い
-
-不十分な場合のみ:
-  → "phaseComplete": false
-  → "confirmedContent": null
-  → 問い返しは最大2往復まで。2往復目でも不明瞭なら、学習者の表現を尊重してそのまま確定する`,
-
-    steps: `【フェーズ: 処理手順確認】
-入力・出力を踏まえ、処理の手順を一問ずつ掘り下げてください。
-特定の解法に誘導せず、学習者自身の考えを引き出してください。
-
-学習者が述べた処理の1ステップが論理的に確定したと判断したら:
-  → "phaseComplete": "step"
-  → "confirmedContent": "確定した1ステップの内容（簡潔に整理した文）"
-
-まだ手順の確認が続く場合:
-  → "phaseComplete": false
-  → "confirmedContent": null
-
-処理手順が全て揃い、入力から出力を導く手順が論理的に完結したと判断したら:
-  → "phaseComplete": "pseudocode"
-  → "confirmedContent": null
-  そして "message" に「処理手順の整理ができました。右のパネルを確認しながら、疑似コードを書いてみましょう。」と伝える`,
-
-    pseudocode: `【フェーズ: 疑似コード確認】
-学習者が提出した疑似コードを評価してください。
-確定した処理手順との整合性を基準とし、論理的に成立しているかどうかを判断します。
-多様な記述形式（自然言語に近い表現・インデント・箇条書きなど）を受け入れてください。
-
-疑似コードが論理的に成立している（処理手順と整合し、入力から出力を導けている）と判断したら:
-  → "phaseComplete": "pseudocode"
-  → "confirmedContent": "学習者が書いた疑似コードをそのまま"
-
-まだフィードバックが必要な場合:
-  → "phaseComplete": false
-  → "confirmedContent": null
-  不足点を一問だけ問い返す（正しい疑似コードを提示しない）`,
-
-    complete: `【フェーズ: 完了】
-学習者の取り組みを称え、疑似コードをもとに自力でコーディングするよう励ましてください。
-  → "phaseComplete": "complete"
-  → "confirmedContent": null`,
-  }
-
-  // 学習者が「この内容で確定」を押した場合、通常フェーズ判定を上書きして強制的に次フェーズへ進める
-  const forceCompleteOverride = forceComplete
-    ? `
-
-【最優先指示: 学習者が確定を希望しています】
-これまでの対話を踏まえ、必ず現フェーズに対応する phaseComplete の値を設定してください。
-- 入力確認フェーズ → "phaseComplete": "input"
-- 出力確認フェーズ → "phaseComplete": "output"
-- 処理手順フェーズ（1ステップ確定）→ "phaseComplete": "step"
-- 処理手順フェーズ（全手順完了）→ "phaseComplete": "pseudocode"
-- 疑似コードフェーズ → "phaseComplete": "pseudocode"
-confirmedContent にはこれまでの対話から導いた内容を簡潔に要約して入れてください。
-追加の問い返しは行わず、message は確定を伝える一言のみにしてください。`
-    : ""
-
-  return `${baseRules}
-
-${phaseInstructions[phase]}${forceCompleteOverride}`
+// フェーズに応じたモデル名を返す
+export function selectModel(phase: Exclude<Phase, "idle">): string {
+  return PHASE_MODEL_MAP[phase]
 }
