@@ -131,6 +131,13 @@ export default function Home() {
             break
           case "pseudocode":
             if (phase === "steps") {
+              // 直近ターンで学習者が追加したがまだ確定していないステップ群を取り込む
+              if (data.confirmedSteps && data.confirmedSteps.length > 0) {
+                setConfirmed(prev => ({
+                  ...prev,
+                  steps: [...prev.steps, ...data.confirmedSteps!],
+                }))
+              }
               setPhase("pseudocode")
             } else if (phase === "pseudocode") {
               setPhase("complete")
