@@ -7,6 +7,11 @@ const FONT_SIZE = 14
 const LINE_HEIGHT = 21 // 14px * 1.5
 const PADDING_V = 12
 
+// react-simple-code-editor は highlight の戻り値を dangerouslySetInnerHTML で挿入するため、
+// `<` や `&` などの HTML 特殊文字を素通ししてしまうとタグとして解釈されて文字が消える。
+const escapeHtml = (text: string): string =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+
 type PseudocodeEditorProps = {
   onSubmit: (text: string) => void
   onAdvance: (text: string) => void
@@ -82,7 +87,7 @@ export default function PseudocodeEditor({ onSubmit, onAdvance, disabled }: Pseu
           <Editor
             value={code}
             onValueChange={setCode}
-            highlight={c => c}
+            highlight={escapeHtml}
             padding={PADDING_V}
             disabled={disabled}
             tabSize={2}
