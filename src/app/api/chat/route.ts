@@ -45,6 +45,15 @@ export async function POST(request: Request) {
   try {
     const { message, history, phase, problem, confirmed, forceComplete, learnerId, sessionId }: ChatRequest = await request.json()
 
+    // 完了フェーズは学習者の入力手段を持たず、本エンドポイントを呼ぶ経路がない。
+    // 万一到達した場合はクライアント側のバグなので 400 を返す。
+    if (phase === "complete") {
+      return Response.json(
+        { error: "complete フェーズは AI 呼び出しを受け付けません" },
+        { status: 400 }
+      )
+    }
+
     const systemPrompt = buildSystemPrompt(phase, problem, confirmed, forceComplete ?? false)
     const model = selectModel(phase)
 
@@ -139,7 +148,6 @@ export async function POST(request: Request) {
         output: "output",
         steps: "step",
         pseudocode: "pseudocode",
-        complete: "complete",
       }
       phaseComplete = phaseToComplete[phase]
       console.warn(`[phaseComplete推論] AIが確定表現を使ったが phaseComplete=false。${phase} → ${phaseComplete} に補正`)
